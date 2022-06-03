@@ -1,7 +1,7 @@
-name: new_version
+name: bundle_version
 description: Check if your user has the most recent version of your Flutter app.
 version: 0.3.0
-homepage: https://github.com/timtraversy/new_version
+#homepage: https://github.com/timtraversy/new_version
 
 environment:
   sdk: ">=2.12.0 <3.0.0"
@@ -14,6 +14,7 @@ dependencies:
   html: ^0.15.0
   url_launcher: ^6.0.2
   collection: ^1.15.0
+  dio: ^4.0.6
 
 dev_dependencies:
   flutter_test:

@@ -1,10 +1,11 @@
-library new_version;
+library bundle_version;
 
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 
 import 'package:collection/collection.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:html/parser.dart' show parse;
@@ -59,7 +60,7 @@ class VersionStatus {
   });
 }
 
-class NewVersion {
+class BundleVersion {
   /// An optional value that can override the default packageName when
   /// attempting to reach the Apple App Store. This is useful if your app has
   /// a different package name in the App Store.
@@ -81,12 +82,14 @@ class NewVersion {
   /// before publishng a new version.
   final String? forceAppVersion;
 
-  NewVersion({
+  final Dio _dio;
+
+  BundleVersion({
     this.androidId,
     this.iOSId,
     this.iOSAppStoreCountry,
     this.forceAppVersion,
-  });
+  }) : _dio = Dio();
 
   /// This checks the version status, then displays a platform-specific alert
   /// with buttons to dismiss the update alert, or go to the app store.
@@ -110,6 +113,7 @@ class NewVersion {
       debugPrint(
           'The target platform "${Platform.operatingSystem}" is not yet supported by this package.');
     }
+    return null;
   }
 
   /// This function attempts to clean local version strings so they match the MAJOR.MINOR.PATCH
@@ -125,13 +129,14 @@ class NewVersion {
     if (iOSAppStoreCountry != null) {
       parameters.addAll({"country": iOSAppStoreCountry!});
     }
-    var uri = Uri.https("itunes.apple.com", "/lookup", parameters);
-    final response = await http.get(uri);
-    if (response.statusCode != 200) {
+    // var uri = Uri.https("itunes.apple.com", "/lookup", parameters);
+    final res = await _dio.get("itunes.apple.com/lookup", queryParameters: parameters);
+    // final response = await http.get(uri);
+    if (res.statusCode != 200) {
       debugPrint('Failed to query iOS App Store');
       return null;
     }
-    final jsonObj = json.decode(response.body);
+    final jsonObj = json.decode(res.data);
     final List results = jsonObj['results'];
     if (results.isEmpty) {
       debugPrint('Can\'t find an app in the App Store with the id: $id');
@@ -150,14 +155,15 @@ class NewVersion {
   Future<VersionStatus?> _getAndroidStoreVersion(
       PackageInfo packageInfo) async {
     final id = androidId ?? packageInfo.packageName;
-    final uri =
-        Uri.https("play.google.com", "/store/apps/details", {"id": "$id"});
-    final response = await http.get(uri);
-    if (response.statusCode != 200) {
+    final res = await _dio.get(
+      "play.google.com/store/apps/details",
+      queryParameters: {"id": "$id"},
+    );
+    if (res.statusCode != 200) {
       debugPrint('Can\'t find an app in the Play Store with the id: $id');
       return null;
     }
-    final document = parse(response.body);
+    final document = parse(res.data);
 
     final additionalInfoElements = document.getElementsByClassName('hAyfc');
     final versionElement = additionalInfoElements.firstWhere(
@@ -177,7 +183,7 @@ class NewVersion {
     return VersionStatus._(
       localVersion: _getCleanVersion(packageInfo.version),
       storeVersion: _getCleanVersion(forceAppVersion ?? storeVersion),
-      appStoreLink: uri.toString(),
+      appStoreLink: res.requestOptions.uri.toString(),
       releaseNotes: releaseNotes,
     );
   }
