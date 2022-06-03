@@ -12,6 +12,7 @@ import 'package:html/parser.dart' show parse;
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:url_launcher/url_launcher_string.dart';
 
 /// Information about the app's current version, and the most recent version
 /// available in the Apple App Store or Google Play Store.
@@ -124,68 +125,76 @@ class BundleVersion {
   /// iOS info is fetched by using the iTunes lookup API, which returns a
   /// JSON document.
   Future<VersionStatus?> _getiOSStoreVersion(PackageInfo packageInfo) async {
-    final id = iOSId ?? packageInfo.packageName;
-    final parameters = {"bundleId": "$id"};
-    if (iOSAppStoreCountry != null) {
-      parameters.addAll({"country": iOSAppStoreCountry!});
+    try {
+      final id = iOSId ?? packageInfo.packageName;
+      final parameters = {"bundleId": "$id"};
+      if (iOSAppStoreCountry != null) {
+        parameters.addAll({"country": iOSAppStoreCountry!});
+      }
+      // var uri = Uri.https("itunes.apple.com", "/lookup", parameters);
+      final res = await _dio.get("https://itunes.apple.com/lookup", queryParameters: parameters);
+      // final response = await http.get(uri);
+      if (res.statusCode != 200) {
+        debugPrint('Failed to query iOS App Store');
+        return null;
+      }
+      final jsonObj = json.decode(res.data);
+      final List results = jsonObj['results'];
+      if (results.isEmpty) {
+        debugPrint('Can\'t find an app in the App Store with the id: $id');
+        return null;
+      }
+      return VersionStatus._(
+        localVersion: _getCleanVersion(packageInfo.version),
+        storeVersion:
+            _getCleanVersion(forceAppVersion ?? jsonObj['results'][0]['version']),
+        appStoreLink: jsonObj['results'][0]['trackViewUrl'],
+        releaseNotes: jsonObj['results'][0]['releaseNotes'],
+      );
+    } on Exception catch (e) {
+      debugPrint("Error occurred => $e");
     }
-    // var uri = Uri.https("itunes.apple.com", "/lookup", parameters);
-    final res = await _dio.get("https://itunes.apple.com/lookup", queryParameters: parameters);
-    // final response = await http.get(uri);
-    if (res.statusCode != 200) {
-      debugPrint('Failed to query iOS App Store');
-      return null;
-    }
-    final jsonObj = json.decode(res.data);
-    final List results = jsonObj['results'];
-    if (results.isEmpty) {
-      debugPrint('Can\'t find an app in the App Store with the id: $id');
-      return null;
-    }
-    return VersionStatus._(
-      localVersion: _getCleanVersion(packageInfo.version),
-      storeVersion:
-          _getCleanVersion(forceAppVersion ?? jsonObj['results'][0]['version']),
-      appStoreLink: jsonObj['results'][0]['trackViewUrl'],
-      releaseNotes: jsonObj['results'][0]['releaseNotes'],
-    );
   }
 
   /// Android info is fetched by parsing the html of the app store page.
   Future<VersionStatus?> _getAndroidStoreVersion(
       PackageInfo packageInfo) async {
-    final id = androidId ?? packageInfo.packageName;
-    final res = await _dio.get(
-      "https://play.google.com/store/apps/details",
-      queryParameters: {"id": "$id"},
-    );
-    if (res.statusCode != 200) {
-      debugPrint('Can\'t find an app in the Play Store with the id: $id');
-      return null;
+    try {
+      final id = androidId ?? packageInfo.packageName;
+      final res = await _dio.get(
+        "https://play.google.com/store/apps/details",
+        queryParameters: {"id": "$id"},
+      );
+      if (res.statusCode != 200) {
+        debugPrint('Can\'t find an app in the Play Store with the id: $id');
+        return null;
+      }
+      final document = parse(res.data);
+
+      final additionalInfoElements = document.getElementsByClassName('hAyfc');
+      final versionElement = additionalInfoElements.firstWhere(
+        (elm) => elm.querySelector('.BgcNfc')!.text == 'Current Version',
+      );
+      final storeVersion = versionElement.querySelector('.htlgb')!.text;
+
+      final sectionElements = document.getElementsByClassName('W4P4ne');
+      final releaseNotesElement = sectionElements.firstWhereOrNull(
+        (elm) => elm.querySelector('.wSaTQd')!.text == 'What\'s New',
+      );
+      final releaseNotes = releaseNotesElement
+          ?.querySelector('.PHBdkd')
+          ?.querySelector('.DWPxHb')
+          ?.text;
+
+      return VersionStatus._(
+        localVersion: _getCleanVersion(packageInfo.version),
+        storeVersion: _getCleanVersion(forceAppVersion ?? storeVersion),
+        appStoreLink: res.requestOptions.uri.toString(),
+        releaseNotes: releaseNotes,
+      );
+    } on Exception catch (e) {
+      debugPrint("Error occurred => $e");
     }
-    final document = parse(res.data);
-
-    final additionalInfoElements = document.getElementsByClassName('hAyfc');
-    final versionElement = additionalInfoElements.firstWhere(
-      (elm) => elm.querySelector('.BgcNfc')!.text == 'Current Version',
-    );
-    final storeVersion = versionElement.querySelector('.htlgb')!.text;
-
-    final sectionElements = document.getElementsByClassName('W4P4ne');
-    final releaseNotesElement = sectionElements.firstWhereOrNull(
-      (elm) => elm.querySelector('.wSaTQd')!.text == 'What\'s New',
-    );
-    final releaseNotes = releaseNotesElement
-        ?.querySelector('.PHBdkd')
-        ?.querySelector('.DWPxHb')
-        ?.text;
-
-    return VersionStatus._(
-      localVersion: _getCleanVersion(packageInfo.version),
-      storeVersion: _getCleanVersion(forceAppVersion ?? storeVersion),
-      appStoreLink: res.requestOptions.uri.toString(),
-      releaseNotes: releaseNotes,
-    );
   }
 
   /// Shows the user a platform-specific alert about the app update. The user
@@ -271,8 +280,8 @@ class BundleVersion {
   /// Launches the Apple App Store or Google Play Store page for the app.
   Future<void> launchAppStore(String appStoreLink) async {
     debugPrint(appStoreLink);
-    if (await canLaunch(appStoreLink)) {
-      await launch(appStoreLink);
+    if (await canLaunchUrlString(appStoreLink)) {
+      await launchUrlString(appStoreLink);
     } else {
       throw 'Could not launch appStoreLink';
     }
