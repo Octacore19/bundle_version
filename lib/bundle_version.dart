@@ -156,7 +156,7 @@ class BundleVersion {
       PackageInfo packageInfo) async {
     final id = androidId ?? packageInfo.packageName;
     final res = await _dio.get(
-      "play.google.com/store/apps/details",
+      "https://play.google.com/store/apps/details",
       queryParameters: {"id": "$id"},
     );
     if (res.statusCode != 200) {
