@@ -130,7 +130,7 @@ class BundleVersion {
       parameters.addAll({"country": iOSAppStoreCountry!});
     }
     // var uri = Uri.https("itunes.apple.com", "/lookup", parameters);
-    final res = await _dio.get("itunes.apple.com/lookup", queryParameters: parameters);
+    final res = await _dio.get("https://itunes.apple.com/lookup", queryParameters: parameters);
     // final response = await http.get(uri);
     if (res.statusCode != 200) {
       debugPrint('Failed to query iOS App Store');
